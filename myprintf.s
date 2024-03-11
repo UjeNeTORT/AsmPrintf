@@ -3,7 +3,6 @@ SECTION .text
 extern  printf
 
 global  myprintf
-global  count_printf_params
 
 ;===========================================================
 ; THIS IS NOT AN ACTUAL FUNCTION BUT A TRAMPOLINE TO
@@ -30,7 +29,9 @@ myprintf:
 ;===========================================================
 ;
 ;
-;
+; Return:
+;       RAX - number of specifiers which were successfully
+;               handled
 ; Destr:
 ;===========================================================
 ; extern int myprintf (const char* fmt_string, params...)
@@ -39,43 +40,71 @@ myprintf_cdecl:
         push rbp
         mov rbp, rsp
 
-        push QWORD [rbp + 0x10]         ; push string offset
+        push rcx                        ; save
+        push rbx
 
-        call count_printf_params
+        xor rcx, rcx                    ; rcx = 0
+        mov rbx, QWORD [rbp + 0x10]     ; rbx = format string
 
-        add rsp, 8                      ; pop call argument
+; -----------------------------------------------------------------
+.str_loop:
+        cmp byte [rbx], '%'             ; check if symb is specifier
+        je .specifier_encounter
+
+        ; if not specifier - putchar()
+        push rcx                        ; protect from syscall
+
+        mov rax, 0x01                   ; write64 (rdi, rsi, rax)
+        mov rdi, 0x01                   ; stdout fd
+        mov rsi, rbx                    ; curr string pos
+        mov rdx, 0x01                   ; display only 1 char
+        syscall
+
+        pop rcx
+
+.str_loop_end:
+        inc rbx                         ; next symbol
+
+        cmp byte [rbx], 0               ; stop if encounter null terminator
+        jne .str_loop
+; -----------------------------------------------------------------
+        jmp .func_end
+
+.specifier_encounter:
+        inc rcx                         ; increase number of processed specifiers
+        inc rbx                         ; skip % symbol
+
+                                        ; location of specifier parameter in stack
+        push QWORD [rbp + rcx * 0x08 + 0x08]
+        push QWORD [rbx]                ; specifier symbol
+
+        call process_specifier
+
+        add  rsp, 2 * 8                 ; clean stack
+
+        jmp .str_loop_end
+
+        jmp .func_end                   ; precaution
+
+.func_end:
+
+        mov rax, rcx                    ; return value
+        pop rbx                         ; restore
+        pop rcx
 
         pop rbp
-
-        mov rax, 0
 
         ret
 
 ;===========================================================
-; Entry:
-;       [RBP + 0x10] - format string which contains % symbols
-; Returns:
-;       RAX - number of parameters in printf format string
-;
-; if next symbol after % is not 0, then ignore it and go to i+2 (not i+1)
 ;
 ;===========================================================
-count_printf_params:
+process_specifier:
 
         push rbp
-        mov  rbp, rsp
+        mov rbp, rsp
 
-        push rcx        ; save
 
-        xor rax, rax
-
-        mov rcx, [rbp + 0x10]
-
-.next:
-
-        loop .next
-
-        pop rcx         ; restore
 
         pop rbp
 
