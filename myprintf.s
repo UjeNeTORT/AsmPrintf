@@ -23,7 +23,7 @@ myprintf:
 
         call myprintf_cdecl
 
-        add rsp, 6 * 8
+        add rsp, 6 * 0x08
 
         ret
 
