@@ -336,6 +336,28 @@ write_bin:
 ; ------------------------------------------
 
 ; write on screen
+
+.write_prefix:
+
+        push '0'
+        call putchar_cdecl
+        add rsp, 0x08
+
+        push 'b'
+        call putchar_cdecl
+        add rsp, 0x08
+
+        cmp r10, NUMBER_BUF_SIZE
+        jne .not_zero
+
+        push '0'
+        call putchar_cdecl
+        add rsp, 0x08
+
+        jmp .func_end
+        
+.not_zero:
+
         mov rcx, NUMBER_BUF_SIZE
         sub rcx, r10
 
@@ -351,9 +373,7 @@ write_bin:
 
         loop .display_digit
 
-        push 'b'
-        call putchar_cdecl
-        add rsp, 0x08
+.func_end:
 
         pop rdx 
         pop r11
