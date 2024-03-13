@@ -19,7 +19,7 @@ times ('x' - 's' - 1)   dq case_dflt
                         dq  case_x     ; x
  
                         dq  case_dflt  ; handles error
- 
+
 SECTION .text
  
 global  myprintf
@@ -241,7 +241,10 @@ case_prcnt:
         jmp switch_end
  
 case_b:
- 
+        push QWORD [rbp + 0x18] ; param - number
+        call write_bin
+        add rsp, 0x08           ; pop param
+
         jmp switch_end
  
 case_c:
@@ -251,7 +254,7 @@ case_c:
         jmp switch_end
  
 case_d:
- 
+
         jmp switch_end
  
 case_o:
@@ -261,11 +264,11 @@ case_o:
 case_s:
         push QWORD [rbp + 0x18] ; param - string ptr
         call puts_cdecl
-        add rsp, 0x08
+        add rsp, 0x08           ; pop param
         jmp switch_end
  
 case_x:
- 
+
         jmp switch_end
  
 switch_end:
@@ -275,7 +278,93 @@ switch_end:
         pop rbp
  
         ret
- 
+
+
+;===========================================================
+; Display binary number 
+; Arguments:
+;       arg1 - [rbp + 0x10] - number
+; Destr: 
+;===========================================================
+write_bin:
+        push rbp
+        mov rbp, rsp
+
+        push rax
+        push rcx
+        push r10
+        push r11
+        push rdx
+
+        call clear_num_buf      ; buffer stores 0s
+
+        mov rax, [rbp + 0x10]   ; arg1 - number
+        xor rcx, rcx
+        xor r10, r10            ; r10 stores number of non-significant zeros 
+
+; ------------------------------------------
+.nextdigit:                     ; put reversed representation of the number in buffer
+        mov rdx, 0x01
+
+; ---------------
+; shl rdx, rcx
+        cmp rcx, 0
+        je .after_shift
+        push rcx
+.next:
+        shl rdx, 1
+        loop .next
+        pop rcx
+; ---------------
+.after_shift:
+        and rdx, rax
+        
+        mov BYTE [num_buf + rcx], '0'
+
+        cmp rdx, 0 
+        je .loop_end
+
+        mov BYTE [num_buf + rcx], '1'
+        xor r10, r10
+        dec r10
+.loop_end:
+        inc r10
+        inc rcx
+        
+        cmp rcx, NUMBER_BUF_SIZE
+        jne .nextdigit
+; ------------------------------------------
+
+; write on screen
+        mov rcx, NUMBER_BUF_SIZE
+        sub rcx, r10
+
+.display_digit:
+        lea r11, [num_buf + rcx - 1]
+        
+        xor rax, rax
+        mov al, BYTE [r11]
+
+        push rax
+        call putchar_cdecl
+        add rsp, 0x08
+
+        loop .display_digit
+
+        push 'b'
+        call putchar_cdecl
+        add rsp, 0x08
+
+        pop rdx 
+        pop r11
+        pop r10
+        pop rcx
+        pop rax
+
+        pop rbp
+
+        ret
+
 ;===========================================================
 ; Display null-terminated string of bytes  
 ; Arguments:
@@ -289,6 +378,7 @@ puts_cdecl:
  
         ; if not specifier - putchar()
         push rcx                        ; protect from syscall
+        push r11
  
         push rax
         push rdi
@@ -314,7 +404,8 @@ puts_cdecl:
         pop rsi
         pop rdi
         pop rax
- 
+        
+        pop r11
         pop rcx
  
         pop rbp
@@ -333,7 +424,8 @@ putchar_cdecl:
  
         ; if not specifier - putchar()
         push rcx                        ; protect from syscall
- 
+        push r11
+
         push rax
         push rdi
         push rsi
@@ -341,7 +433,7 @@ putchar_cdecl:
         push rdx
  
         mov rbx, [rbp + 0x10]
-        mov [char_buf], rbx             ; 
+        mov BYTE [char_buf], bl             ; 
  
         mov rax, 0x01                   ; write64 (rdi, rsi, rax)
         mov rdi, 0x01                   ; stdout fd
@@ -354,12 +446,28 @@ putchar_cdecl:
         pop rsi
         pop rdi
         pop rax
- 
+        
+        pop r11
         pop rcx
  
         pop rbp
  
         ret
- 
+
+clear_num_buf:
+
+        push rcx
+        mov rcx, NUMBER_BUF_SIZE
+.next:
+        mov BYTE [num_buf + rcx - 1], 0
+        loop .next
+
+        pop rcx
+
+        ret 
+
 SECTION .data
         char_buf: db 0x00
+
+        NUMBER_BUF_SIZE equ 64
+        num_buf: times (NUMBER_BUF_SIZE) db 0x00     ; buffer for storage of number representation
