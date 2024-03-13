@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-extern void myprintf            (char * fmt_string, ...);
+extern void myprintf (char * fmt_string, ...);
 
 int main ()
 {
