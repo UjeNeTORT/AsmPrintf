@@ -33,7 +33,7 @@ global  myprintf
 ; extern int myprintf (const char* fmt_string, params...)
 myprintf:
 
-        pop r11                 ; how didnt i notice this by myself???
+        pop r15                 ; how didnt i notice this by myself???
 
         push r9
         push r8
@@ -46,7 +46,7 @@ myprintf:
         
         add rsp, 6 * 0x08
 
-        push r11                ; recover ret address
+        push r15                ; recover ret address
 
         ret
  
@@ -60,7 +60,7 @@ myprintf:
 ;===========================================================
 ; extern int myprintf (const char* fmt_string, params...)
 myprintf_cdecl:
-        push rbp
+        push rbp        
         mov rbp, rsp
  
         push rcx                        ; save
@@ -424,26 +424,35 @@ write_dec:
         xor rcx, rcx
         xor r10, r10            ; r10 stores number of non-significant zeros 
 
+        test eax, eax           ; if number < 0: do фокусы блять
+        jns .nextdigit
+
+        neg eax                 ; АХХАХАХАХ НЕГР ААЗАЗАЗЗАЗААы
+        
+                                ; display '-'
+        push '-'
+        call putchar_cdecl
+        add rsp, 0x08
 ; ------------------------------------------
 .nextdigit:                     ; put reversed representation of the number in buffer
-        mov rdx, rax
+        mov edx, eax
 
         push rbx
 
-        mov rbx, 10
-        xor rdx, rdx
-        div rbx
+        mov ebx, 10
+        xor edx, edx
+        div ebx
 
         pop rbx
 
-        cmp rdx, 0
+        cmp edx, 0
         je .put_digit
 
         xor r10, r10
         dec r10 
 
 .put_digit:
-        add rdx, '0'
+        add edx, '0'
         mov BYTE [num_buf + rcx], dl
 
 .loop_end:

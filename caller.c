@@ -16,7 +16,7 @@ int main ()
                             -1, "love RADAR", 226, 100, 33, 126,
                             -1, "love RADAR", 226, 100, 33, 126);
 
-    printf ("%d\n", res);
+    printf ("this beast have returned %d\n", res);
 
     return 0;
 }
