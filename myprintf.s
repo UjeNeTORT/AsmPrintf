@@ -271,6 +271,9 @@ case_s:
         jmp switch_end
  
 case_x:
+        push QWORD [rbp + 0x18] ; param - number
+        call write_hex
+        add rsp, 0x08           ; pop param
 
         jmp switch_end
  
@@ -415,7 +418,7 @@ write_oct:
 .nextdigit:                     ; put reversed representation of the number in buffer
         mov rdx, rax
 
-        shr rdx, 3
+        shr rdx, 3              ; last 3 bits = 000
         shl rdx, 3
         
         mov r12, rax
@@ -451,6 +454,122 @@ write_oct:
         add rsp, 0x08
 
         push '0'
+        call putchar_cdecl
+        add rsp, 0x08
+
+        cmp r10, NUMBER_BUF_SIZE
+        jne .not_zero
+
+        push '0'
+        call putchar_cdecl
+        add rsp, 0x08
+
+        jmp .func_end
+        
+.not_zero:
+
+        mov rcx, NUMBER_BUF_SIZE
+        sub rcx, r10
+
+.display_digit:
+        lea r11, [num_buf + rcx - 1]
+        
+        xor rax, rax
+        mov al, BYTE [r11]
+
+        push rax
+        call putchar_cdecl
+        add rsp, 0x08
+
+        loop .display_digit
+
+.func_end:
+
+        pop rdx 
+        pop r12
+        pop r11
+        pop r10
+        pop rcx
+        pop rax
+
+        pop rbp
+
+        ret
+
+;===========================================================
+; Display hex number 
+; Arguments:
+;       arg1 - [rbp + 0x10] - number
+; Destr: 
+;===========================================================
+write_hex: 
+        push rbp
+        mov rbp, rsp
+
+        push rax
+        push rcx
+        push r10
+        push r11
+        push r12
+        push rdx
+
+        call clear_num_buf      ; buffer stores 0s
+
+        mov rax, [rbp + 0x10]   ; arg1 - number
+        xor rcx, rcx
+        xor r10, r10            ; r10 stores number of non-significant zeros 
+
+; ------------------------------------------
+.nextdigit:                     ; put reversed representation of the number in buffer
+        mov rdx, rax
+
+        shr rdx, 4              ; last 4 bits = 0000
+        shl rdx, 4
+        
+        mov r12, rax
+        sub r12, rdx
+        mov rdx, r12
+
+        cmp rdx, 0
+        je .put_digit
+
+        xor r10, r10
+        dec r10 
+
+.put_digit:
+        cmp rdx, 10
+        jae .digit_is_letter
+
+        add rdx, '0'
+        jmp .put_digit_end
+
+.digit_is_letter:
+        sub rdx, 10
+        add rdx, 'A'
+        jmp .put_digit_end
+
+.put_digit_end:
+        mov BYTE [num_buf + rcx], dl
+
+.loop_end:
+        shr rax, 4
+        
+        inc r10
+        inc rcx
+        
+        cmp rcx, NUMBER_BUF_SIZE
+        jne .nextdigit
+; ------------------------------------------
+
+; write on screen
+
+.write_prefix:
+
+        push '0'
+        call putchar_cdecl
+        add rsp, 0x08
+
+        push 'x'
         call putchar_cdecl
         add rsp, 0x08
 
