@@ -28,11 +28,13 @@ global  myprintf
 ; THIS IS NOT AN ACTUAL FUNCTION BUT A TRAMPOLINE TO
 ;       SIMULATE CDECL CALL CONVENTION
 ;
-;
-; Destr:
+; Destr: -
 ;===========================================================
 ; extern int myprintf (const char* fmt_string, params...)
 myprintf:
+
+        pop r11                 ; how didnt i notice this by myself???
+
         push r9
         push r8
         push rcx
@@ -41,9 +43,11 @@ myprintf:
         push rdi
  
         call myprintf_cdecl
- 
+        
         add rsp, 6 * 0x08
- 
+
+        push r11                ; recover ret address
+
         ret
  
 ;===========================================================
@@ -56,13 +60,14 @@ myprintf:
 ;===========================================================
 ; extern int myprintf (const char* fmt_string, params...)
 myprintf_cdecl:
- 
         push rbp
         mov rbp, rsp
  
         push rcx                        ; save
         push rbx
- 
+        push r10
+
+        xor r10, r10                    ; r10 = 0 - not used (left it here in case % parameter counts as real one)
         xor rcx, rcx                    ; rcx = 0
         mov rbx, QWORD [rbp + 0x10]     ; rbx = format string
  
@@ -101,8 +106,9 @@ myprintf_cdecl:
  
         add  rsp, 2 * 0x08              ; clean stack
  
-        cmp BYTE [rbx], '%'             ; <---------- BE CAREFUL !
+        cmp BYTE [rbx], '%'             ; <-- FORMER BUG, KEEP AN EYE ON THIS PLACE
         jne .spend_stack_param
+
         jmp .str_loop_end
  
 .spend_stack_param:
@@ -114,7 +120,9 @@ myprintf_cdecl:
 .func_end:
  
         mov rax, rcx                    ; return value
-        pop rbx                         ; restore
+
+        pop r10                         ; restore
+        pop rbx                         
         pop rcx
  
         pop rbp
@@ -122,12 +130,13 @@ myprintf_cdecl:
         ret
  
 ;===========================================================
+; Given specifier symbol and its corresponding parameter
+;       perform expected interpretation of specifier
 ; Arguments:
 ;       arg1 - [rbp + 0x10] - specifier symbol addr
 ;       arg2 - [rbp + 0x18] - parameter value
 ;===========================================================
 process_specifier:
- 
         push rbp
         mov  rbp, rsp
  
@@ -145,9 +154,9 @@ process_specifier:
         cmp rbx, '%'
         jb case_dflt
  
-        sub rbx, '%'            ; % has the least ASCII code among
-        jmp [jmptbl + 8 * rbx]
- 
+        sub rbx, '%'            ; % has the least ASCII code among all the spec symbs
+        jmp [jmptbl + 8 * rbx]  ; perform jumptable jump
+
 L1: ; &
 L2: ; '
 L3: ; (
@@ -226,58 +235,59 @@ L80: ; u
 L81: ; v
 L82: ; w
  
-case_dflt:
-        nop
-        nop
-        nop
-        nop
-        ; need something here
+case_dflt:                      ; EXCEPTION
+                                ; TODO: ERROR HANDLING
+                                ; current behaviour - ignore unknown specifier and its parameter
+                                ; THIS PLACE IS SILENT, IT DOES NOT INFORM USER THAT THIS IS AN EXCEPTION
         jmp switch_end
  
-case_prcnt:
+case_prcnt:                     ; PERCENT CHARACTER 
         push '%'                ; param - char '%'
         call putchar_cdecl
         add rsp, 0x08           ; pop param
         jmp switch_end
  
-case_b:
+case_b:                         ; BINARY (bufferized)
         push QWORD [rbp + 0x18] ; param - number
         call write_bin
         add rsp, 0x08           ; pop param
 
         jmp switch_end
  
-case_c:
+case_c:                         ; CHARACTER (BYTE) (bufferized lol)
         push QWORD [rbp + 0x18] ; param - char
         call putchar_cdecl
         add rsp, 0x08           ; pop param
         jmp switch_end
  
-case_d:
+case_d:                         ; DECIMAL (bufferized)
+        push QWORD [rbp + 0x18] ; param - number
+        call write_dec
+        add rsp, 0x08           ; pop param
 
         jmp switch_end
  
-case_o:
+case_o:                         ; OCTAL (bufferized)
         push QWORD [rbp + 0x18] ; param - number
         call write_oct
         add rsp, 0x08           ; pop param
 
         jmp switch_end
  
-case_s:
+case_s:                         ; DISPLAY STRING (pseudo-bufferized)
         push QWORD [rbp + 0x18] ; param - string ptr
         call puts_cdecl
         add rsp, 0x08           ; pop param
         jmp switch_end
  
-case_x:
+case_x:                         ; HEXADECIMAL (bufferized)
         push QWORD [rbp + 0x18] ; param - number
         call write_hex
         add rsp, 0x08           ; pop param
 
         jmp switch_end
  
-switch_end:
+switch_end:                     ; END OF THE SWITCH
         pop rcx                 ; recover
         pop rbx
  
@@ -288,6 +298,7 @@ switch_end:
 
 ;===========================================================
 ; Display binary number 
+; 
 ; Arguments:
 ;       arg1 - [rbp + 0x10] - number
 ; Destr: 
@@ -353,7 +364,7 @@ write_bin:
         call putchar_cdecl
         add rsp, 0x08
 
-        cmp r10, NUMBER_BUF_SIZE
+        cmp r10, NUMBER_BUF_SIZE                ; trunctate unsignificant zeros
         jne .not_zero
 
         push '0'
@@ -382,6 +393,99 @@ write_bin:
 .func_end:
 
         pop rdx 
+        pop r11
+        pop r10
+        pop rcx
+        pop rax
+
+        pop rbp
+
+        ret
+;===========================================================
+; Display decimal number 
+; Arguments:
+;       arg1 - [rbp + 0x10] - number
+; Destr: 
+;===========================================================
+write_dec: 
+        push rbp
+        mov rbp, rsp
+
+        push rax
+        push rcx
+        push r10
+        push r11
+        push r12
+        push rdx
+
+        call clear_num_buf      ; buffer stores 0s
+
+        mov rax, [rbp + 0x10]   ; arg1 - number
+        xor rcx, rcx
+        xor r10, r10            ; r10 stores number of non-significant zeros 
+
+; ------------------------------------------
+.nextdigit:                     ; put reversed representation of the number in buffer
+        mov rdx, rax
+
+        push rbx
+
+        mov rbx, 10
+        xor rdx, rdx
+        div rbx
+
+        pop rbx
+
+        cmp rdx, 0
+        je .put_digit
+
+        xor r10, r10
+        dec r10 
+
+.put_digit:
+        add rdx, '0'
+        mov BYTE [num_buf + rcx], dl
+
+.loop_end:
+
+        inc r10
+        inc rcx
+        
+        cmp rcx, NUMBER_BUF_SIZE
+        jne .nextdigit
+; ------------------------------------------
+
+; write on screen (no prefix)
+        cmp r10, NUMBER_BUF_SIZE                ; trunctate unsignificant zeros
+        jne .not_zero
+
+        push '0'
+        call putchar_cdecl
+        add rsp, 0x08
+
+        jmp .func_end
+
+.not_zero:
+
+        mov rcx, NUMBER_BUF_SIZE
+        sub rcx, r10
+
+.display_digit:
+        lea r11, [num_buf + rcx - 1]
+        
+        xor rax, rax
+        mov al, BYTE [r11]
+
+        push rax
+        call putchar_cdecl
+        add rsp, 0x08
+
+        loop .display_digit
+
+.func_end:
+
+        pop rdx 
+        pop r12
         pop r11
         pop r10
         pop rcx
@@ -623,7 +727,6 @@ puts_cdecl:
         push rbp
         mov rbp, rsp
  
-        ; if not specifier - putchar()
         push rcx                        ; protect from syscall
         push r11
  
@@ -668,19 +771,18 @@ puts_cdecl:
 putchar_cdecl:
         push rbp
         mov rbp, rsp
- 
-        ; if not specifier - putchar()
+
         push rcx                        ; protect from syscall
         push r11
 
-        push rax
+        push rax                        ; save regs
         push rdi
         push rsi
         push rbx
         push rdx
  
         mov rbx, [rbp + 0x10]
-        mov BYTE [char_buf], bl             ; 
+        mov BYTE [char_buf], bl         ; fill buffer with char
  
         mov rax, 0x01                   ; write64 (rdi, rsi, rax)
         mov rdi, 0x01                   ; stdout fd
@@ -688,7 +790,7 @@ putchar_cdecl:
         mov rdx, 0x01                   ; display only 1 char
         syscall
  
-        pop rdx
+        pop rdx                         ; restore
         pop rbx
         pop rsi
         pop rdi
@@ -697,7 +799,7 @@ putchar_cdecl:
         pop r11
         pop rcx
  
-        pop rbp
+        pop rbp                         ; here was a terrible bug i ve looked for for 2 hours (pop rsp) :((((
  
         ret
 
@@ -714,7 +816,7 @@ clear_num_buf:
         ret 
 
 SECTION .data
-        char_buf: db 0x00
+        char_buf: db 0x00                               ; buffer for storage of char
 
         NUMBER_BUF_SIZE equ 64
-        num_buf: times (NUMBER_BUF_SIZE) db 0x00     ; buffer for storage of number representation
+        num_buf: times (NUMBER_BUF_SIZE) db 0x00        ; buffer for storage of number representation
