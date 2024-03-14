@@ -524,21 +524,25 @@ write_oct:
         call clear_num_buf      ; buffer stores 0s
 
         mov rax, [rbp + 0x10]   ; arg1 - number
+        mov r10, rax
+        xor rax, rax
+        or eax, r10d
+
         xor rcx, rcx
         xor r10, r10            ; r10 stores number of non-significant zeros 
 
 ; ------------------------------------------
 .nextdigit:                     ; put reversed representation of the number in buffer
-        mov rdx, rax
+        mov edx, eax
 
-        shr rdx, 3              ; last 3 bits = 000
-        shl rdx, 3
+        shr edx, 3              ; last 3 bits = 000
+        shl edx, 3
         
-        mov r12, rax
-        sub r12, rdx
-        mov rdx, r12
+        mov r12d, eax
+        sub r12d, edx
+        mov edx, r12d
 
-        cmp rdx, 0
+        cmp edx, 0
         je .put_digit
 
         xor r10, r10
@@ -549,7 +553,7 @@ write_oct:
         mov BYTE [num_buf + rcx], dl
 
 .loop_end:
-        shr rax, 3
+        shr eax, 3
         
         inc r10
         inc rcx
